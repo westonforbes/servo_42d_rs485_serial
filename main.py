@@ -29,12 +29,10 @@ class Servo42D_RS485_Serial:
 
 
     def _byte_array_to_int(self, byte_array: list[int]) -> int:
-
         return int.from_bytes(bytearray(byte_array), byteorder='big', signed=True)
     
 
     def _int_to_byte_array(self, value: int, length: int) -> list[int]:
-
         return list(value.to_bytes(length, byteorder='big', signed=True))
 
 
@@ -45,11 +43,11 @@ class Servo42D_RS485_Serial:
 
         # Check function_code type.
         if not isinstance(function_code, int): 
-            raise TypeError(f"Unsupported function_code type: {type(function_code)}")
+            raise TypeError(f"unsupported function_code type: {type(function_code)}")
         
         # Check payload type.
         if not isinstance(payload, list): 
-            raise TypeError(f"Unsupported payload type: {type(payload)}")
+            raise TypeError(f"unsupported payload type: {type(payload)}")
 
         # Calculate checksum by summing all individual values
         # Boolean AND with 0xFF to keep the lowest 8 bits.
@@ -81,11 +79,11 @@ class Servo42D_RS485_Serial:
 
         # Check function_code type.
         if not isinstance(function_code, int): 
-            raise TypeError(f"Unsupported function_code type: {type(function_code)}")
+            raise TypeError(f"unsupported function_code type: {type(function_code)}")
         
         # Check payload type.
         if not isinstance(payload, list): 
-            raise TypeError(f"Unsupported payload type: {type(payload)}")
+            raise TypeError(f"unsupported payload type: {type(payload)}")
 
         # Calculate checksum by summing all individual values
         # Boolean AND with 0xFF to keep the lowest 8 bits.
@@ -110,7 +108,7 @@ class Servo42D_RS485_Serial:
         return packet
     
 
-    def _decode_uplink_packet(self, packet: list[int], verbose: bool = False):
+    def _decode_uplink_packet(self, packet: list[int], verbose: bool = False) -> int:
         
         # Debug output.
         if verbose: Console.fancy_print(f"<FUNCTION>_decode_uplink_packet()</FUNCTION>")
@@ -163,13 +161,14 @@ class Servo42D_RS485_Serial:
             return "Unknown"
 
 
-    def _open_serial_connection(self, port: str, baudrate: int = 9600, timeout: float = 1.0):
+    def _open_serial_connection(self, port: str, baudrate: int = 9600, timeout: float = 1.0) -> serial.Serial:
         
         try:
             connection = serial.Serial(port=port, baudrate=baudrate, timeout=timeout)
             return connection
         except Exception as e:
             raise RuntimeError(f"could not open serial connection on port '{port}': {e}")
+
 
     def _send_and_receive_packet(self, command_packet: list[int], verbose: bool = False) -> list[int]:
         
@@ -189,6 +188,7 @@ class Servo42D_RS485_Serial:
 
         return response_packet
 
+
     def get_encoder_position(self, verbose: bool = False) -> list[int]:
 
         # Construct the command packet.
@@ -207,7 +207,7 @@ class Servo42D_RS485_Serial:
         return encoder_position
 
 
-    def enable_motor(self, verbose: bool = False) -> list[int]:
+    def enable_motor(self, verbose: bool = False) -> bool:
 
         # Construct the command packet.
         command_packet = self._calculate_downlink_packet(
@@ -216,13 +216,53 @@ class Servo42D_RS485_Serial:
             verbose=verbose
         )
 
-        # TODO: Send command_packet via RS485 serial and receive response_packet.
-        response_packet =[0xFB, 0x01, 0xF3, 0x7F, 0xF0, 0x9C]  # Placeholder for received packet.
+        # Send command and receive response.
+        response_packet = self._send_and_receive_packet(command_packet, verbose=verbose)
 
         # Decode the response packet.
-        encoder_position = self._decode_uplink_packet(response_packet, verbose=verbose)
+        status = self._decode_uplink_packet(response_packet, verbose=verbose)
 
-        return encoder_position
+        # Returns True if motor enabled successfully.
+        return status
+    
+
+    def disable_motor(self, verbose: bool = False) -> bool:
+
+        # Construct the command packet.
+        command_packet = self._calculate_downlink_packet(
+            function_code=self.ENABLE_MOTOR,
+            payload=[0x00],
+            verbose=verbose
+        )
+
+        # Send command and receive response.
+        response_packet = self._send_and_receive_packet(command_packet, verbose=verbose)
+
+        # Decode the response packet.
+        status = self._decode_uplink_packet(response_packet, verbose=verbose)
+
+        # Returns True if motor disabled successfully.
+        return status
+
+
+    def position_motor(self, raw_position: int, speed: int, acc: int, verbose: bool = False) -> bool:
+            
+        # Construct the command packet.
+        command_packet = self._calculate_downlink_packet(
+            function_code=0xFE,
+            payload=[0x02, 0x58, 0x02, 0x00, 0x00, 0x40, 0x00], # payload=[0x02, 0x58, 0x02, 0xFF, 0xFF, 0xC0, 0x00],
+            verbose=verbose
+        )
+
+        # Send command and receive response.
+        response_packet = self._send_and_receive_packet(command_packet, verbose=verbose)
+
+        # Decode the response packet.
+        status = self._decode_uplink_packet(response_packet, verbose=verbose)
+
+        # Returns True if motor disabled successfully.
+        return status
+
 
 if __name__ == "__main__":
 
@@ -268,4 +308,9 @@ if __name__ == "__main__":
     Console.fancy_print("<INFO>\nExample of getting encoder position.</INFO>")
     encoder_position = servo.get_encoder_position(verbose=True)
     Console.fancy_print(f"<GOOD>Successfully retrieved encoder position: {encoder_position}</GOOD>")
+
+    Console.fancy_print("<INFO>\nTest 1.</INFO>")
+    motor_enabled = servo.enable_motor(verbose=True)
+    servo.position_motor(raw_position=10000, speed=600, acc=400, verbose=True)
+
 
