@@ -24,8 +24,8 @@ class Servo42D_RS485_Serial:
         self.slave_address = slave_address
 
         # Open serial connection.
-        #try: self.serial_connection = self._open_serial_connection(port=com_port, baudrate=baudrate, timeout=timeout)
-        #except Exception as e: raise e
+        try: self.serial_connection = self._open_serial_connection(port=com_port, baudrate=baudrate, timeout=timeout)
+        except Exception as e: raise e
 
 
     def _byte_array_to_int(self, byte_array: list[int]) -> int:
@@ -112,10 +112,6 @@ class Servo42D_RS485_Serial:
         
         # Debug output.
         if verbose: Console.fancy_print(f"<FUNCTION>_decode_uplink_packet()</FUNCTION>")
-        
-        # Check packet length.
-        if len(packet) < 4:
-            raise ValueError(f"Invalid uplink packet length: {len(packet)}")
 
         # Extract components.
         packet_head = packet[0]
@@ -172,6 +168,8 @@ class Servo42D_RS485_Serial:
 
     def _send_and_receive_packet(self, command_packet: list[int], verbose: bool = False) -> list[int]:
         
+        self.serial_connection.reset_input_buffer()
+
         # Send command packet.
         self.serial_connection.write(bytearray(command_packet))
 
@@ -183,8 +181,8 @@ class Servo42D_RS485_Serial:
 
         # Debug output.
         if verbose:
-            Console.fancy_print(f"<DATA>sent command packet: {[f'0x{b:02X}' for b in command_packet]}</DATA>")
-            Console.fancy_print(f"<DATA>received response packet: {[f'0x{b:02X}' for b in response_packet]}</DATA>")
+            Console.fancy_print(f"  <DATA>sent command packet: {[f'0x{b:02X}' for b in command_packet]}</DATA>")
+            Console.fancy_print(f"  <DATA>received response packet: {[f'0x{b:02X}' for b in response_packet]}</DATA>")
 
         return response_packet
 
@@ -198,15 +196,30 @@ class Servo42D_RS485_Serial:
             verbose=verbose
         )
 
-        #response_packet = self._send_and_receive_packet(command_packet, verbose=verbose)
-        response_packet =[0xFB, 0x01, 0x31, 0x7F, 0xF0, 0x9C]  # Placeholder for received packet.
+        response_packet = self._send_and_receive_packet(command_packet, verbose=verbose)
 
         # Decode the response packet.
         encoder_position = self._decode_uplink_packet(response_packet, verbose=verbose)
 
         return encoder_position
 
+    def send_command(self, function_code: int, payload: list[int], verbose: bool = False):
 
+        # Construct the command packet.
+        command_packet = self._calculate_downlink_packet(
+            function_code=function_code,
+            payload=payload,
+            verbose=verbose
+        )
+
+        # Send command and receive response.
+        response_packet = self._send_and_receive_packet(command_packet, verbose=verbose)
+
+        # Decode the response packet.
+        status = self._decode_uplink_packet(response_packet, verbose=verbose)
+
+        return status
+    
     def enable_motor(self, verbose: bool = False) -> bool:
 
         # Construct the command packet.
@@ -250,7 +263,8 @@ class Servo42D_RS485_Serial:
         # Construct the command packet.
         command_packet = self._calculate_downlink_packet(
             function_code=0xFE,
-            payload=[0x02, 0x58, 0x02, 0x00, 0x00, 0x40, 0x00], # payload=[0x02, 0x58, 0x02, 0xFF, 0xFF, 0xC0, 0x00],
+            #payload=[0x02, 0x58, 0x02, 0x00, 0x00, 0x40, 0x00], 
+            payload=[0x02, 0x58, 0x02, 0xFF, 0xFF, 0xC0, 0x00],
             verbose=verbose
         )
 
@@ -273,44 +287,49 @@ if __name__ == "__main__":
     Console.fancy_print("<INFO>\nservo_42d_rs485_serial class test script</INFO>")
 
     # Initialize servo object, passing in the desired slave address.
-    Console.fancy_print("<INFO>\nInitializing Servo42D_RS485_Serial object...</INFO>")
+    Console.fancy_print("<INFO>\ninitializing Servo42D_RS485_Serial object...</INFO>")
     servo = None
-    try: servo = Servo42D_RS485_Serial(slave_address=0x01, com_port="COM8", baudrate=9600, timeout=1.0)
+    try: servo = Servo42D_RS485_Serial(slave_address=0x01, com_port="COM3", baudrate=38400, timeout=1.0)
     except Exception as e:
-        Console.fancy_print(f"<BAD>Failed to initialize Servo42D_RS485_Serial object: {e}</BAD>")
+        Console.fancy_print(f"<BAD>failed to initialize Servo42D_RS485_Serial object: {e}</BAD>")
         exit(1)
     Console.fancy_print("<GOOD>Servo42D_RS485_Serial object initialized.</GOOD>")
+    Console.press_enter_pause()
 
-    # Define demo function for decoding uplink packets.
-    def uplink_packet_demo(packet):
-        try:
-            position = servo._decode_uplink_packet(packet, verbose=True)
-            Console.fancy_print(f"<GOOD>Successfully decoded uplink packet. Encoder position: {position}</GOOD>")
-        except ValueError as e:
-            Console.fancy_print(f"<BAD>Failed to decode uplink packet: {e}</BAD>")
+    Console.clear()
+    Console.fancy_print("<INFO>\nfactory reset. manual section 5.6, pg 30.</INFO>")
+    result = servo.send_command(function_code=0x3F, payload=[],verbose= True)
+    Console.fancy_print(f"<INFO>return code: </INFO><DATA>{result}</DATA>")
+    Console.press_enter_pause()
 
-    example_encoder_position_packet_valid     = [0xFB, 0x01, 0x31, 0x7F, 0xF0, 0x9C]
-    example_encoder_position_packet_corrupted = [0xFB, 0x01, 0x31, 0x7F, 0xF0, 0x93]  # Corrupted checksum.
+    Console.clear()
+    Console.fancy_print("<INFO>\n restart command. manual section 5.7, pg 30.</INFO>")
+    result = servo.send_command(function_code=0x41, payload=[],verbose= False)
+    Console.fancy_print(f"<INFO>return code: </INFO><DATA>{result}</DATA>")
+    Console.press_enter_pause()
 
-    # Demonstrate decoding a valid uplink packet using package documented in 5.1.2.
-    Console.fancy_print("<INFO>\nExample of valid uplink packet decoding (private method, not typically for user use):</INFO>")
-    uplink_packet_demo(example_encoder_position_packet_valid)
-
-    # Demonstrate decoding a corrupted uplink packet.
-    Console.fancy_print("<INFO>\nExample of corrupted uplink packet decoding (private method, not typically for user use):</INFO>")
-    uplink_packet_demo(example_encoder_position_packet_corrupted)
-
-    # Demonstrate creating a downlink packet.
-    Console.fancy_print("<INFO>\nExample of downlink packet creation (private method, not typically for user use):</INFO>")
-    downlink_packet = servo._calculate_downlink_packet(function_code=Servo42D_RS485_Serial.READ_ENCODER_VALUE_ADDITION,payload=[],verbose=True)
-    Console.fancy_print(f"<GOOD>Successfully created downlink packet: {[f'0x{b:02X}' for b in downlink_packet]}</GOOD>")
-
-    Console.fancy_print("<INFO>\nExample of getting encoder position.</INFO>")
-    encoder_position = servo.get_encoder_position(verbose=True)
+    Console.clear()
+    Console.fancy_print("<INFO>\nget encoder position.</INFO>")
+    encoder_position = servo.get_encoder_position(verbose=False)
     Console.fancy_print(f"<GOOD>Successfully retrieved encoder position: {encoder_position}</GOOD>")
+    Console.press_enter_pause()
 
-    Console.fancy_print("<INFO>\nTest 1.</INFO>")
+    Console.clear()
+    Console.fancy_print("<INFO>\nset work mode command. manual section 5.2.2, pg 18.</INFO>")
+    result = servo.send_command(function_code=0x82, payload=[0x04],verbose= True) # Set the enable pin mode to always active.
+    Console.fancy_print(f"<INFO>return code: </INFO><DATA>{result}</DATA>")
+    Console.press_enter_pause()
+    
+    Console.clear()
+    Console.fancy_print("<INFO>\nset enable pin mode.</INFO>")
+    result = servo.send_command(function_code=0x85, payload=[0x02],verbose= True) # Set the enable pin mode to always active.
+    Console.fancy_print(f"<INFO>return code: </INFO><DATA>{result}</DATA>")
+    Console.press_enter_pause()
+
+    Console.fancy_print("<INFO>\nenable motor.</INFO>")
     motor_enabled = servo.enable_motor(verbose=True)
+
+    Console.fancy_print("<INFO>\nmove motor.</INFO>")
     servo.position_motor(raw_position=10000, speed=600, acc=400, verbose=True)
 
 
